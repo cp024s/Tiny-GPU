@@ -212,3 +212,39 @@ async def test_div_program(dut):
     await run_program(dut, program)
 
     assert read_reg(dut, 0) == 5
+
+
+@cocotb.test()
+async def test_branch_taken(dut):
+
+    cocotb.start_soon(
+        Clock(dut.clk, 10, unit="ns").start()
+    )
+
+    await reset_dut(dut)
+
+    #
+    # Program:
+    #
+    # 0: CONST R1,10
+    # 1: CONST R2,20
+    # 2: CMP R1,R2
+    # 3: BRN 5
+    # 4: CONST R0,99
+    # 5: CONST R0,55
+    # 6: RET
+    #
+
+    program = [
+        0x910A,
+        0x9214,
+        0x2012,
+        0xA405,
+        0x9063,
+        0x9037,
+        RET,
+    ]
+
+    await run_program(dut, program)
+
+    assert read_reg(dut, 0) == 55
