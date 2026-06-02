@@ -1,102 +1,153 @@
 `default_nettype none
 `timescale 1ns/1ns
 
+import gpu_pkg::*;
+
+// ============================================================
 // REGISTER FILE
-// > Each thread within each core has it's own register file with 13 free registers and 3 read-only registers
-// > Read-only registers hold the familiar %blockIdx, %blockDim, and %threadIdx values critical to SIMD
+//
+// Per-thread architectural register file.
+//
+// Register Map
+// ------------
+// R0-R12 : General Purpose Registers
+// R13    : %blockIdx
+// R14    : %blockDim
+// R15    : %threadIdx
+//
+// Future Evolution:
+// - Scoreboarding
+// - Register Renaming
+// - SIMD Register Banks
+// ============================================================
+
 module registers #(
-    parameter THREADS_PER_BLOCK = 4,
-    parameter THREAD_ID = 0,
-    parameter DATA_BITS = 8
-) (
-    input wire clk,
-    input wire reset,
-    input wire enable, // If current block has less threads then block size, some registers will be inactive
+    parameter int THREADS_PER_BLOCK = 4,
+    parameter int THREAD_ID         = 0,
+    parameter int DATA_BITS         = 8
+)(
+    input  logic clk,
+    input  logic reset,
+    input  logic enable,
 
     // Kernel Execution
-    input reg [7:0] block_id,
+    input  logic [7:0] block_id,
 
-    // State
-    input reg [2:0] core_state,
+    // Execution State
+    input  core_state_t core_state,
 
-    // Instruction Signals
-    input reg [3:0] decoded_rd_address,
-    input reg [3:0] decoded_rs_address,
-    input reg [3:0] decoded_rt_address,
+    // Decode Outputs
+    input  logic [3:0] decoded_rd_address,
+    input  logic [3:0] decoded_rs_address,
+    input  logic [3:0] decoded_rt_address,
 
     // Control Signals
-    input reg decoded_reg_write_enable,
-    input reg [1:0] decoded_reg_input_mux,
-    input reg [DATA_BITS-1:0] decoded_immediate,
+    input  logic decoded_reg_write_enable,
+    input  logic [1:0] decoded_reg_input_mux,
+    input  logic [DATA_BITS-1:0] decoded_immediate,
 
-    // Thread Unit Outputs
-    input reg [DATA_BITS-1:0] alu_out,
-    input reg [DATA_BITS-1:0] lsu_out,
+    // Execution Results
+    input  logic [DATA_BITS-1:0] alu_out,
+    input  logic [DATA_BITS-1:0] lsu_out,
 
-    // Registers
-    output reg [7:0] rs,
-    output reg [7:0] rt
+    // Register Outputs
+    output logic [DATA_BITS-1:0] rs,
+    output logic [DATA_BITS-1:0] rt
 );
-    localparam ARITHMETIC = 2'b00,
-        MEMORY = 2'b01,
-        CONSTANT = 2'b10;
 
-    // 16 registers per thread (13 free registers and 3 read-only registers)
-    reg [7:0] registers[15:0];
+    typedef enum logic [1:0] {
+        REG_INPUT_ARITHMETIC = 2'b00,
+        REG_INPUT_MEMORY     = 2'b01,
+        REG_INPUT_CONSTANT   = 2'b10
+    } reg_input_mux_t;
 
-    always @(posedge clk) begin
+    logic [DATA_BITS-1:0] register_file [15:0];
+
+    integer i;
+
+    always_ff @(posedge clk) begin
+
         if (reset) begin
-            // Empty rs, rt
-            rs <= 0;
-            rt <= 0;
-            // Initialize all free registers
-            registers[0] <= 8'b0;
-            registers[1] <= 8'b0;
-            registers[2] <= 8'b0;
-            registers[3] <= 8'b0;
-            registers[4] <= 8'b0;
-            registers[5] <= 8'b0;
-            registers[6] <= 8'b0;
-            registers[7] <= 8'b0;
-            registers[8] <= 8'b0;
-            registers[9] <= 8'b0;
-            registers[10] <= 8'b0;
-            registers[11] <= 8'b0;
-            registers[12] <= 8'b0;
-            // Initialize read-only registers
-            registers[13] <= 8'b0;              // %blockIdx
-            registers[14] <= THREADS_PER_BLOCK; // %blockDim
-            registers[15] <= THREAD_ID;         // %threadIdx
-        end else if (enable) begin 
-            // [Bad Solution] Shouldn't need to set this every cycle
-            registers[13] <= block_id; // Update the block_id when a new block is issued from dispatcher
-            
-            // Fill rs/rt when core_state = REQUEST
-            if (core_state == 3'b011) begin 
-                rs <= registers[decoded_rs_address];
-                rt <= registers[decoded_rt_address];
+
+            rs <= '0;
+            rt <= '0;
+
+            //--------------------------------------------------
+            // General Purpose Registers
+            //--------------------------------------------------
+
+            for (i = 0; i < 13; i++) begin
+                register_file[i] <= '0;
             end
 
-            // Store rd when core_state = UPDATE
-            if (core_state == 3'b110) begin 
-                // Only allow writing to R0 - R12
-                if (decoded_reg_write_enable && decoded_rd_address < 13) begin
-                    case (decoded_reg_input_mux)
-                        ARITHMETIC: begin 
-                            // ADD, SUB, MUL, DIV
-                            registers[decoded_rd_address] <= alu_out;
-                        end
-                        MEMORY: begin 
-                            // LDR
-                            registers[decoded_rd_address] <= lsu_out;
-                        end
-                        CONSTANT: begin 
-                            // CONST
-                            registers[decoded_rd_address] <= decoded_immediate;
-                        end
-                    endcase
-                end
-            end
+            //--------------------------------------------------
+            // Read-Only Registers
+            //--------------------------------------------------
+
+            register_file[13] <= '0;                // %blockIdx
+            register_file[14] <= DATA_BITS'(THREADS_PER_BLOCK);
+            register_file[15] <= DATA_BITS'(THREAD_ID);
+
         end
+        else if (enable) begin
+
+            //--------------------------------------------------
+            // Dynamic Special Registers
+            //--------------------------------------------------
+
+            register_file[13] <= block_id;
+
+            //--------------------------------------------------
+            // Operand Read
+            //--------------------------------------------------
+
+            if (core_state == CORE_REQUEST) begin
+
+                rs <= register_file[decoded_rs_address];
+                rt <= register_file[decoded_rt_address];
+
+            end
+
+            //--------------------------------------------------
+            // Register Writeback
+            //--------------------------------------------------
+
+            if (core_state == CORE_UPDATE) begin
+
+                if (decoded_reg_write_enable &&
+                    (decoded_rd_address < 4'd13)) begin
+
+                    case (decoded_reg_input_mux)
+
+                        REG_INPUT_ARITHMETIC: begin
+                            register_file[decoded_rd_address]
+                                <= alu_out;
+                        end
+
+                        REG_INPUT_MEMORY: begin
+                            register_file[decoded_rd_address]
+                                <= lsu_out;
+                        end
+
+                        REG_INPUT_CONSTANT: begin
+                            register_file[decoded_rd_address]
+                                <= decoded_immediate;
+                        end
+
+                        default: begin
+                            // no-op
+                        end
+
+                    endcase
+
+                end
+
+            end
+
+        end
+
     end
+
 endmodule
+
+`default_nettype wire

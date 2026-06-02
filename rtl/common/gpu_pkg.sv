@@ -1,3 +1,5 @@
+`timescale 1ns/1ns
+
 package gpu_pkg;
 
 `include "gpu_params.svh"

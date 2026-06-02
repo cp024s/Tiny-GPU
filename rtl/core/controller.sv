@@ -48,21 +48,19 @@ module controller #(
 
     always @(posedge clk) begin
         if (reset) begin 
-            mem_read_valid <= 0;
-            mem_read_address <= 0;
+            for (int i = 0; i < NUM_CHANNELS; i++) begin
+                mem_read_address[i]  <= '0;
+                mem_write_address[i] <= '0;
+                mem_write_data[i]    <= '0;
+            end
 
-            mem_write_valid <= 0;
-            mem_write_address <= 0;
-            mem_write_data <= 0;
-
-            consumer_read_ready <= 0;
-            consumer_read_data <= 0;
-            consumer_write_ready <= 0;
-
-            current_consumer <= 0;
-            controller_state <= 0;
-
+            for (int i = 0; i < NUM_CONSUMERS; i++) begin
+                consumer_read_data[i] <= '0;
+                current_consumer[i]   <= '0;
+                controller_state[i]   <= '0;
+            end
             channel_serving_consumer = 0;
+
         end else begin 
             // For each channel, we handle processing concurrently
             for (int i = 0; i < NUM_CHANNELS; i = i + 1) begin 
@@ -72,7 +70,7 @@ module controller #(
                         for (int j = 0; j < NUM_CONSUMERS; j = j + 1) begin 
                             if (consumer_read_valid[j] && !channel_serving_consumer[j]) begin 
                                 channel_serving_consumer[j] = 1;
-                                current_consumer[i] <= j;
+                                current_consumer[i] <= $clog2(NUM_CONSUMERS)'(j);
 
                                 mem_read_valid[i] <= 1;
                                 mem_read_address[i] <= consumer_read_address[j];
@@ -82,7 +80,7 @@ module controller #(
                                 break;
                             end else if (consumer_write_valid[j] && !channel_serving_consumer[j]) begin 
                                 channel_serving_consumer[j] = 1;
-                                current_consumer[i] <= j;
+                                current_consumer[i] <= $clog2(NUM_CONSUMERS)'(j);
 
                                 mem_write_valid[i] <= 1;
                                 mem_write_address[i] <= consumer_write_address[j];
@@ -125,6 +123,10 @@ module controller #(
                             consumer_write_ready[current_consumer[i]] <= 0;
                             controller_state[i] <= IDLE;
                         end
+                    end
+
+                    default: begin
+                        controller_state[i] <= IDLE;
                     end
                 endcase
             end
