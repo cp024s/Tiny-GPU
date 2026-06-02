@@ -75,6 +75,41 @@ def read_reg(dut, reg_idx):
            .value
     )
 
+def read_nzp(dut):
+
+    return int(
+        dut.g_thread[0]
+           .pc_instance
+           .nzp
+           .value
+    )
+
+@cocotb.test()
+async def test_cmp_program(dut):
+
+    cocotb.start_soon(
+        Clock(dut.clk, 10, unit="ns").start()
+    )
+
+    await reset_dut(dut)
+
+    program = [
+        0x910A,   # CONST R1,10
+        0x9214,   # CONST R2,20
+        0x2012,   # CMP R1,R2
+        RET,
+    ]
+
+    await run_program(dut, program)
+
+    #
+    # 10 < 20
+    #
+    # Expected:
+    # N=1 Z=0 P=0
+    #
+
+    assert read_nzp(dut) == 0b001
 
 @cocotb.test()
 async def test_const_program(dut):
