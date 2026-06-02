@@ -1,69 +1,93 @@
 `default_nettype none
 `timescale 1ns/1ns
-
+import gpu_pkg::*;
+// ============================================================
 // PROGRAM COUNTER
-// > Calculates the next PC for each thread to update to (but currently we assume all threads
-//   update to the same PC and don't support branch divergence)
-// > Currently, each thread in each core has it's own calculation for next PC
-// > The NZP register value is set by the CMP instruction (based on >/=/< comparison) to 
-//   initiate the BRnzp instruction for branching
-module pc #(
-    parameter DATA_MEM_DATA_BITS = 8,
-    parameter PROGRAM_MEM_ADDR_BITS = 8
-) (
-    input wire clk,
-    input wire reset,
-    input wire enable, // If current block has less threads then block size, some PCs will be inactive
+//
+// Calculates the next PC for a thread.
+//
+// Current Assumptions:
+// - No branch divergence
+// - All threads within a block converge to same PC
+//
+// Future Evolution:
+// - Branch divergence
+// - Reconvergence support
+// - Warp-level PC management
+// ============================================================
 
-    // State
-    input reg [2:0] core_state,
+module pc #(
+    parameter int DATA_MEM_DATA_BITS    = 8,
+    parameter int PROGRAM_MEM_ADDR_BITS = 8
+)(
+    input  logic clk,
+    input  logic reset,
+
+    // Thread Active
+    input  logic enable,
+
+    // Execution State
+    input  core_state_t core_state,
 
     // Control Signals
-    input reg [2:0] decoded_nzp,
-    input reg [DATA_MEM_DATA_BITS-1:0] decoded_immediate,
-    input reg decoded_nzp_write_enable,
-    input reg decoded_pc_mux, 
+    input  logic [2:0] decoded_nzp,
+    input  logic [DATA_MEM_DATA_BITS-1:0] decoded_immediate,
+    input  logic decoded_nzp_write_enable,
+    input  logic decoded_pc_mux,
 
-    // ALU Output - used for alu_out[2:0] to compare with NZP register
-    input reg [DATA_MEM_DATA_BITS-1:0] alu_out,
+    // ALU Output
+    input  logic [DATA_MEM_DATA_BITS-1:0] alu_out,
 
-    // Current & Next PCs
-    input reg [PROGRAM_MEM_ADDR_BITS-1:0] current_pc,
-    output reg [PROGRAM_MEM_ADDR_BITS-1:0] next_pc
+    // Current & Next PC
+    input  logic [PROGRAM_MEM_ADDR_BITS-1:0] current_pc,
+    output logic [PROGRAM_MEM_ADDR_BITS-1:0] next_pc
 );
-    reg [2:0] nzp;
 
-    always @(posedge clk) begin
+    logic [2:0] nzp;
+
+    always_ff @(posedge clk) begin
+
         if (reset) begin
-            nzp <= 3'b0;
-            next_pc <= 0;
-        end else if (enable) begin
-            // Update PC when core_state = EXECUTE
-            if (core_state == 3'b101) begin 
-                if (decoded_pc_mux == 1) begin 
-                    if (((nzp & decoded_nzp) != 3'b0)) begin 
-                        // On BRnzp instruction, branch to immediate if NZP case matches previous CMP
-                        next_pc <= decoded_immediate;
-                    end else begin 
-                        // Otherwise, just update to PC + 1 (next line)
-                        next_pc <= current_pc + 1;
-                    end
-                end else begin 
-                    // By default update to PC + 1 (next line)
-                    next_pc <= current_pc + 1;
-                end
-            end   
+            nzp     <= '0;
+            next_pc <= '0;
 
-            // Store NZP when core_state = UPDATE   
-            if (core_state == 3'b110) begin 
-                // Write to NZP register on CMP instruction
-                if (decoded_nzp_write_enable) begin
-                    nzp[2] <= alu_out[2];
-                    nzp[1] <= alu_out[1];
-                    nzp[0] <= alu_out[0];
+        end
+        else if (enable) begin
+            //--------------------------------------------------
+            // PC Update
+            //--------------------------------------------------
+            if (core_state == CORE_EXECUTE) begin
+
+                if (decoded_pc_mux) begin
+
+                    if ((nzp & decoded_nzp) != 3'b000) begin
+                        // BRnzp Taken
+                        next_pc <= decoded_immediate;
+                    end
+                    else begin
+                        // BRnzp Not Taken
+                        next_pc <= current_pc + 1'b1;
+                    end
+
                 end
-            end      
+                else begin
+                    // Sequential Execution
+                    next_pc <= current_pc + 1'b1;
+                end
+            end
+
+            //--------------------------------------------------
+            // NZP Update
+            //--------------------------------------------------
+
+            if (core_state == CORE_UPDATE) begin
+                if (decoded_nzp_write_enable) begin
+                    nzp <= alu_out[2:0];
+                end
+            end
         end
     end
 
 endmodule
+`default_nettype wire
+
