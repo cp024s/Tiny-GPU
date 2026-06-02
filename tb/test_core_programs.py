@@ -3,6 +3,8 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge
 
+LAST_STORE_ADDR = None
+LAST_STORE_DATA = None
 
 RET = 0xF000
 
@@ -24,6 +26,9 @@ async def reset_dut(dut):
     for i in range(4):
         dut.data_mem_read_data[i].value = 0
 
+    dut.data_mem_read_ready.value = 0
+    dut.data_mem_write_ready.value = 0
+
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
 
@@ -34,13 +39,20 @@ async def reset_dut(dut):
 
 async def run_program(dut, program):
 
+    global LAST_STORE_ADDR
+    global LAST_STORE_DATA
+
     dut.start.value = 1
 
-    timeout = 500
+    timeout = 1000
 
     while timeout > 0:
 
         await RisingEdge(dut.clk)
+
+        #
+        # Program Memory
+        #
 
         if int(dut.program_mem_read_valid.value):
 
@@ -58,9 +70,76 @@ async def run_program(dut, program):
 
             dut.program_mem_read_ready.value = 0
 
+        #
+        # Thread 0 Data Memory Read
+        #
+
+        if int(dut.data_mem_read_valid.value):
+            for i in range(4):
+                if (int(dut.data_mem_read_valid.value) >> i) & 1:
+                    addr = int(dut.data_mem_read_address[i].value)
+
+                    if addr == 10:
+                        dut.data_mem_read_data[i].value = 77
+                    else:
+                        dut.data_mem_read_data[i].value = 0
+
+            dut.data_mem_read_ready.value = int(dut.data_mem_read_valid.value)
+            await RisingEdge(dut.clk)
+            dut.data_mem_read_ready.value = 0
+
+        #
+        # Thread 0 Data Memory Write
+        #
+
+        if int(dut.data_mem_write_valid.value) & 0x1:
+
+            LAST_STORE_ADDR = int(
+                dut.data_mem_write_address[0].value
+            )
+
+            LAST_STORE_DATA = int(
+                dut.data_mem_write_data[0].value
+            )
+
+            dut.data_mem_write_ready.value = int(
+                dut.data_mem_write_valid.value
+            )
+
+            await RisingEdge(dut.clk)
+
+            dut.data_mem_write_ready.value = 0
+
+        if int(dut.data_mem_read_valid.value):
+            cocotb.log.info(f"READ VALID addr={int(dut.data_mem_read_address[0].value)}")
+
+        if int(dut.data_mem_write_valid.value):
+            for i in range(4):
+                if (int(dut.data_mem_write_valid.value) >> i) & 1:
+                    LAST_STORE_ADDR = int(dut.data_mem_write_address[i].value)
+                    LAST_STORE_DATA = int(dut.data_mem_write_data[i].value)
+
+            dut.data_mem_write_ready.value = int(dut.data_mem_write_valid.value)
+            await RisingEdge(dut.clk)
+            dut.data_mem_write_ready.value = 0
+
+
+        #
+        # Completion
+        #
+
+
         if int(dut.done.value):
             return
-
+        
+        if timeout % 50 == 0:
+            cocotb.log.info(
+            f"core={int(dut.core_state.value)} "
+            f"lsu0={int(dut.g_thread[0].lsu_instance.lsu_state.value)} "
+            f"lsu1={int(dut.g_thread[1].lsu_instance.lsu_state.value)} "
+            f"lsu2={int(dut.g_thread[2].lsu_instance.lsu_state.value)} "
+            f"lsu3={int(dut.g_thread[3].lsu_instance.lsu_state.value)}"
+            )
         timeout -= 1
 
     raise AssertionError("Program timeout")
@@ -83,6 +162,14 @@ def read_nzp(dut):
            .nzp
            .value
     )
+
+def clear_store_capture():
+
+    global LAST_STORE_ADDR
+    global LAST_STORE_DATA
+
+    LAST_STORE_ADDR = None
+    LAST_STORE_DATA = None
 
 @cocotb.test()
 async def test_cmp_program(dut):
@@ -248,3 +335,56 @@ async def test_branch_taken(dut):
     await run_program(dut, program)
 
     assert read_reg(dut, 0) == 55
+
+@cocotb.test()
+async def test_load_program(dut):
+
+    cocotb.start_soon(
+        Clock(dut.clk, 10, unit="ns").start()
+    )
+
+    await reset_dut(dut)
+
+    #
+    # R1 = 10
+    # LDR R0,[R1]
+    #
+
+    program = [
+        0x910A,
+        0x7010,
+        RET,
+    ]
+
+    await run_program(dut, program)
+
+    assert read_reg(dut, 0) == 77
+
+@cocotb.test()
+async def test_store_program(dut):
+
+    cocotb.start_soon(
+        Clock(dut.clk, 10, unit="ns").start()
+    )
+
+    clear_store_capture()
+
+    await reset_dut(dut)
+
+    #
+    # R1 = 10
+    # R2 = 55
+    # STR [R1],R2
+    #
+
+    program = [
+        0x910A,
+        0x9237,
+        0x8012,
+        RET,
+    ]
+
+    await run_program(dut, program)
+
+    assert LAST_STORE_ADDR == 10
+    assert LAST_STORE_DATA == 55
