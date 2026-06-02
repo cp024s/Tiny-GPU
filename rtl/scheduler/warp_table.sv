@@ -49,42 +49,15 @@ module warp_table #(
             ) u_warp_context (
                 .clk             (clk),
                 .rst_n           (rst_n),
-
-                .alloc_valid     (
-                    alloc_valid &&
-                    (alloc_warp_id == i)
-                ),
-
+                .alloc_valid     ( alloc_valid && (alloc_warp_id == i)),
                 .alloc_pc        (alloc_pc),
-
-                .update_pc_en    (
-                    update_valid &&
-                    (update_warp_id == i) &&
-                    update_pc_en
-                ),
-
+                .update_pc_en    (update_valid && (update_warp_id == i) && update_pc_en),
                 .update_pc       (update_pc),
-
-                .update_mask_en  (
-                    update_valid &&
-                    (update_warp_id == i) &&
-                    update_mask_en
-                ),
-
+                .update_mask_en  ( update_valid && (update_warp_id == i) && update_mask_en),
                 .update_mask     (update_mask),
-
-                .update_state_en (
-                    update_valid &&
-                    (update_warp_id == i) &&
-                    update_state_en
-                ),
-
+                .update_state_en (update_valid && (update_warp_id == i) && update_state_en),
                 .update_state    (update_state),
-
-                .context         (
-                    warp_contexts[i]
-                )
-            );
+                .warp_context_o  (warp_contexts[i]));
 
         end
     endgenerate

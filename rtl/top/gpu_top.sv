@@ -7,7 +7,7 @@
 //   the device control register before the start signal is triggered
 // > Has memory controllers to interface between external memory and its multiple cores
 // > Configurable number of cores and thread capacity per core
-module gpu #(
+module gpu_top #(
     parameter DATA_MEM_ADDR_BITS = 8,        // Number of bits in data memory address (256 rows)
     parameter DATA_MEM_DATA_BITS = 8,        // Number of bits in data memory value (8 bit data)
     parameter DATA_MEM_NUM_CHANNELS = 4,     // Number of concurrent channels for sending requests to data memory
@@ -52,7 +52,7 @@ module gpu #(
     reg [NUM_CORES-1:0] core_reset;
     reg [NUM_CORES-1:0] core_done;
     reg [7:0] core_block_id [NUM_CORES-1:0];
-    reg [$clog2(THREADS_PER_BLOCK):0] core_thread_count [NUM_CORES-1:0];
+    reg [$clog2(THREADS_PER_BLOCK+1)-1:0] core_thread_count [NUM_CORES-1:0];
 
     // LSU <> Data Memory Controller Channels
     localparam NUM_LSUS = NUM_CORES * THREADS_PER_BLOCK;
@@ -69,8 +69,22 @@ module gpu #(
     localparam NUM_FETCHERS = NUM_CORES;
     reg [NUM_FETCHERS-1:0] fetcher_read_valid;
     reg [PROGRAM_MEM_ADDR_BITS-1:0] fetcher_read_address [NUM_FETCHERS-1:0];
-    reg [NUM_FETCHERS-1:0] fetcher_read_ready;
     reg [PROGRAM_MEM_DATA_BITS-1:0] fetcher_read_data [NUM_FETCHERS-1:0];
+    reg [NUM_FETCHERS-1:0] fetcher_read_ready;
+    
+    
+    // Program memory write-side dummies
+    wire [NUM_FETCHERS-1:0] program_write_valid_dummy;
+    wire [PROGRAM_MEM_ADDR_BITS-1:0] program_write_address_dummy [NUM_FETCHERS-1:0];
+    wire [PROGRAM_MEM_DATA_BITS-1:0] program_write_data_dummy [NUM_FETCHERS-1:0];
+    wire [NUM_FETCHERS-1:0] program_write_ready_dummy;
+    wire [PROGRAM_MEM_NUM_CHANNELS-1:0] program_mem_write_valid_dummy;
+    wire [PROGRAM_MEM_ADDR_BITS-1:0] program_mem_write_address_dummy [PROGRAM_MEM_NUM_CHANNELS-1:0];
+    wire [PROGRAM_MEM_DATA_BITS-1:0] program_mem_write_data_dummy [PROGRAM_MEM_NUM_CHANNELS-1:0];
+    wire [PROGRAM_MEM_NUM_CHANNELS-1:0] program_mem_write_ready_dummy;
+
+    assign program_write_valid_dummy = '0;
+    assign program_mem_write_ready_dummy = '0;
     
     // Device Control Register
     dcr dcr_instance (
@@ -82,7 +96,7 @@ module gpu #(
         .thread_count(thread_count)
     );
 
-    // Data Memory Controller
+
     controller #(
         .ADDR_BITS(DATA_MEM_ADDR_BITS),
         .DATA_BITS(DATA_MEM_DATA_BITS),
@@ -96,6 +110,7 @@ module gpu #(
         .consumer_read_address(lsu_read_address),
         .consumer_read_ready(lsu_read_ready),
         .consumer_read_data(lsu_read_data),
+
         .consumer_write_valid(lsu_write_valid),
         .consumer_write_address(lsu_write_address),
         .consumer_write_data(lsu_write_data),
@@ -105,6 +120,7 @@ module gpu #(
         .mem_read_address(data_mem_read_address),
         .mem_read_ready(data_mem_read_ready),
         .mem_read_data(data_mem_read_data),
+
         .mem_write_valid(data_mem_write_valid),
         .mem_write_address(data_mem_write_address),
         .mem_write_data(data_mem_write_data),
@@ -127,16 +143,27 @@ module gpu #(
         .consumer_read_ready(fetcher_read_ready),
         .consumer_read_data(fetcher_read_data),
 
+        .consumer_write_valid(program_write_valid_dummy),
+        .consumer_write_address(program_write_address_dummy),
+        .consumer_write_data(program_write_data_dummy),
+        .consumer_write_ready(program_write_ready_dummy),
+
         .mem_read_valid(program_mem_read_valid),
         .mem_read_address(program_mem_read_address),
         .mem_read_ready(program_mem_read_ready),
         .mem_read_data(program_mem_read_data),
+
+        .mem_write_valid(program_mem_write_valid_dummy),
+        .mem_write_address(program_mem_write_address_dummy),
+        .mem_write_data(program_mem_write_data_dummy),
+        .mem_write_ready(program_mem_write_ready_dummy)
     );
 
     // Dispatcher
-    dispatch #(
+    block_dispatch #(
         .NUM_CORES(NUM_CORES),
-        .THREADS_PER_BLOCK(THREADS_PER_BLOCK)
+        .THREADS_PER_BLOCK(THREADS_PER_BLOCK),
+        .NUM_WARPS(NUM_CORES)
     ) dispatch_instance (
         .clk(clk),
         .reset(reset),
@@ -147,6 +174,9 @@ module gpu #(
         .core_reset(core_reset),
         .core_block_id(core_block_id),
         .core_thread_count(core_thread_count),
+        .alloc_valid(),
+        .alloc_warp_id(),
+        .alloc_pc(),
         .done(done)
     );
 
@@ -189,7 +219,7 @@ module gpu #(
                 .DATA_MEM_DATA_BITS(DATA_MEM_DATA_BITS),
                 .PROGRAM_MEM_ADDR_BITS(PROGRAM_MEM_ADDR_BITS),
                 .PROGRAM_MEM_DATA_BITS(PROGRAM_MEM_DATA_BITS),
-                .THREADS_PER_BLOCK(THREADS_PER_BLOCK),
+                .THREADS_PER_BLOCK(THREADS_PER_BLOCK)
             ) core_instance (
                 .clk(clk),
                 .reset(core_reset[i]),

@@ -19,7 +19,7 @@ module warp_context #(
     input  warp_state_t update_state,
 
     // Context Read
-    output warp_context_t context
+    output warp_context_t warp_context_o
 );
 
     import gpu_pkg::*;
@@ -92,7 +92,7 @@ module warp_context #(
         end
 
     end
-    assign context = ctx_q;
+    assign warp_context_o = ctx_q;
 
 endmodule
 
