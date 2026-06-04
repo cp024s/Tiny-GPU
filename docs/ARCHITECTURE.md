@@ -1,276 +1,489 @@
-# Tiny GPU Architecture
+# <div align="center">  Tiny GPU Architecture </div>
 
-## Overview
+<div align="center"> 
 
-Tiny GPU is a lightweight SIMT-inspired GPU architecture implemented in SystemVerilog.
+![Status](https://img.shields.io/badge/status-v0.1.0--alpha-orange) ![RTL](https://img.shields.io/badge/RTL-SystemVerilog-blue) ![Verification](https://img.shields.io/badge/Verification-Cocotb-green) ![Simulator](https://img.shields.io/badge/Simulator-Verilator-red) ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 
-The project provides a complete execution flow consisting of:
+</div> 
 
-1. Assembly programs
-2. Software assembler
-3. Program memory interface
-4. GPU top-level integration
-5. Compute cores
-6. Memory subsystem
-7. Verification environment
+> [!IMPORTANT]
+> Tiny GPU is an educational SIMT-inspired GPU architecture implemented in SystemVerilog.
+>
+> The project provides a complete execution flow consisting of an assembler, executable RTL, memory subsystem, integration environment, and automated verification infrastructure.
 
-The current implementation focuses on establishing a complete execution platform rather than maximizing throughput or architectural complexity.
+---
+# Overview
+
+Tiny GPU is a lightweight GPU-style execution platform intended for experimentation with:
+
+* GPU architecture
+* SIMT execution models
+* RTL design
+* Verification methodologies
+* Hardware/software co-design
+
+The design currently supports:
+
+* Multi-core execution
+* Multi-thread execution per core
+* Arithmetic operations
+* Memory operations
+* Conditional branching
+* External memory interfaces
+* Program execution from assembled binaries
 
 ---
 
-## Top-Level Architecture
+# Design Goals
 
-The top-level module is `gpu_top`.
+## Current Goals
 
-The GPU integrates:
+* [x] End-to-end executable flow
+* [x] External memory interface
+* [x] Multi-core integration
+* [x] Thread-aware execution
+* [x] Assembly toolchain
+* [x] Automated verification
 
-* Device Control Register (DCR)
-* Program Memory Controller
-* Data Memory Controller
-* Block Dispatcher
-* Compute Cores
+## Future Goals
 
-Execution flow:
-
-Assembly Program
-→ Assembler
-→ Program Memory
-→ GPU Top
-→ Compute Core
-→ ALU / LSU
-→ Memory System
+* [ ] Warp switching
+* [ ] Occupancy management
+* [ ] SIMD execution
+* [ ] Cache hierarchy
+* [ ] Scoreboarding
+* [ ] FPGA deployment
+* [ ] Coverage-driven verification
 
 ---
 
-## GPU Top
+# Top-Level Architecture
 
-The `gpu_top` module serves as the integration layer for the entire design.
+```text
+                    +----------------------+
+                    | Device Control Reg   |
+                    +----------+-----------+
+                               |
+                               v
+
++------------------------------------------------------+
+|                      GPU TOP                         |
+|                                                      |
+|  +----------------+     +------------------------+   |
+|  | Block Dispatch |     | Memory Controllers     |   |
+|  +-------+--------+     +-----------+------------+   |
+|          |                          |                |
+|          v                          v                |
+|                                                      |
+|  +---------------+    +---------------+             |
+|  |    Core 0     |    |    Core 1     |             |
+|  +---------------+    +---------------+             |
+|                                                      |
++------------------------------------------------------+
+```
+
+---
+
+# Module Hierarchy
+
+```text
+gpu_top
+│
+├── dcr
+├── block_dispatch
+├── data_memory_controller
+├── program_memory_controller
+│
+└── cores[]
+    │
+    └── core
+        │
+        ├── fetch
+        ├── decode
+        ├── scheduler
+        ├── register_file
+        ├── alu
+        ├── lsu
+        └── pc
+```
+
+---
+
+# Execution Flow
+
+```mermaid
+flowchart TD
+
+    A[Assembly Program]
+    B[Assembler]
+    C[Program Memory]
+    D[GPU Top]
+    E[Compute Core]
+    F[ALU / LSU]
+    G[Memory System]
+
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    F --> G
+```
+
+---
+
+# GPU Top
+
+The `gpu_top` module serves as the integration point for the entire design.
 
 Responsibilities:
 
-* Core instantiation
-* Memory arbitration
-* Block dispatch
-* Thread-count configuration
-* Kernel launch control
-
-Configurable parameters include:
-
-* Number of cores
-* Threads per block
-* Program memory width
-* Data memory width
-* Memory channel count
+| Responsibility      | Description                        |
+| ------------------- | ---------------------------------- |
+| Core Integration    | Instantiates compute cores         |
+| Dispatch            | Launches blocks on available cores |
+| Memory Routing      | Connects cores to external memory  |
+| Configuration       | Receives runtime parameters        |
+| Completion Tracking | Detects kernel completion          |
 
 ---
 
-## Device Control Register
+## Key Parameters
 
-The Device Control Register (DCR) stores runtime configuration information.
-
-Current functionality:
-
-* Thread count configuration
-
-The DCR allows software to configure execution resources before kernel launch.
+| Parameter             | Description                      |
+| --------------------- | -------------------------------- |
+| NUM_CORES             | Number of compute cores          |
+| THREADS_PER_BLOCK     | Threads supported per core       |
+| DATA_MEM_ADDR_BITS    | Data memory address width        |
+| DATA_MEM_DATA_BITS    | Data memory data width           |
+| PROGRAM_MEM_ADDR_BITS | Program memory address width     |
+| PROGRAM_MEM_DATA_BITS | Program memory instruction width |
 
 ---
+
+# Memory Subsystem
+
+The memory subsystem consists of two independent controllers.
 
 ## Program Memory Controller
 
-The Program Memory Controller arbitrates instruction fetch requests from all compute cores.
-
-Responsibilities:
+Purpose:
 
 * Instruction fetch arbitration
-* Read request routing
-* Read response routing
+* Instruction response routing
 
-Program memory is currently read-only from the perspective of the GPU.
+Characteristics:
+
+* Read-only
+* Shared across all cores
+* Supports configurable fetch channels
 
 ---
 
 ## Data Memory Controller
 
-The Data Memory Controller arbitrates memory transactions generated by Load/Store Units.
-
-Responsibilities:
+Purpose:
 
 * Load request routing
 * Store request routing
-* Memory response routing
-* Multi-channel arbitration
+* Arbitration between LSU clients
 
-The controller enables multiple execution resources to share a common external memory interface.
+Characteristics:
+
+* Shared memory fabric
+* Multi-channel support
+* Concurrent memory transactions
 
 ---
 
-## Block Dispatcher
+# Device Control Register
 
-The Block Dispatcher controls kernel execution at the GPU level.
+The Device Control Register (DCR) stores runtime configuration.
+
+Current functionality:
+
+| Field        | Description                        |
+| ------------ | ---------------------------------- |
+| Thread Count | Number of active execution threads |
+
+The DCR is configured before kernel launch.
+
+---
+
+# Block Dispatch
+
+The Block Dispatcher manages GPU execution at the kernel level.
 
 Responsibilities:
 
-* Kernel launch
-* Block allocation
-* Core activation
+* Core allocation
+* Block assignment
+* Start control
 * Completion tracking
 
-The dispatcher distributes work to available compute cores.
+Current implementation provides:
+
+* Static dispatch
+* Core activation
+* Completion aggregation
 
 ---
 
-## Compute Core
+# Compute Core
 
 The compute core is the primary execution engine.
 
 Each core contains:
 
-* Fetch Unit
-* Decode Unit
-* Scheduler
-* Register File
-* Program Counter
-* Arithmetic Logic Unit
-* Load Store Unit
-
-Each core supports multiple threads through replicated thread resources.
-
----
-
-## Execution Pipeline
-
-The scheduler controls execution using a state-machine-based pipeline.
-
-Pipeline stages:
-
-FETCH
-→ DECODE
-→ REQUEST
-→ WAIT
-→ EXECUTE
-→ UPDATE
-
-Description:
-
-### FETCH
-
-Instruction fetch request generation.
-
-### DECODE
-
-Instruction decoding and control generation.
-
-### REQUEST
-
-Operand acquisition and memory request generation.
-
-### WAIT
-
-Memory response synchronization.
-
-### EXECUTE
-
-ALU and LSU execution.
-
-### UPDATE
-
-Architectural state update and writeback.
+| Module        | Responsibility        |
+| ------------- | --------------------- |
+| Fetch         | Instruction retrieval |
+| Decode        | Instruction decoding  |
+| Scheduler     | Pipeline control      |
+| Register File | Architectural state   |
+| ALU           | Arithmetic execution  |
+| LSU           | Memory execution      |
+| PC            | Program flow control  |
 
 ---
 
-## Arithmetic Logic Unit
+# Execution Pipeline
 
-Current ALU operations:
+The scheduler controls instruction execution using a state-machine pipeline.
 
-* CMP
-* ADD
-* SUB
-* MUL
-* DIV
+```mermaid
+flowchart LR
 
-The ALU operates during the EXECUTE stage.
-
-Future extensions:
-
-* Bitwise logic
-* Shift operations
-* SIMD operations
-* Floating-point support
+    FETCH --> DECODE
+    DECODE --> REQUEST
+    REQUEST --> WAIT
+    WAIT --> EXECUTE
+    EXECUTE --> UPDATE
+    UPDATE --> FETCH
+```
 
 ---
 
-## Register File
+## FETCH
+
+Responsibilities:
+
+* Generate instruction fetch requests
+* Update instruction buffer
+
+---
+
+## DECODE
+
+Responsibilities:
+
+* Decode opcode
+* Generate control signals
+* Select execution resources
+
+---
+
+## REQUEST
+
+Responsibilities:
+
+* Read source operands
+* Generate memory requests
+
+---
+
+## WAIT
+
+Responsibilities:
+
+* Wait for memory completion
+* Synchronize execution resources
+
+---
+
+## EXECUTE
+
+Responsibilities:
+
+* ALU execution
+* LSU execution
+
+---
+
+## UPDATE
+
+Responsibilities:
+
+* Register writeback
+* Program counter update
+* Architectural state update
+
+> [!NOTE]
+> Register file writeback occurs during the UPDATE stage.
+
+---
+
+# Arithmetic Logic Unit
+
+Currently implemented operations:
+
+| Instruction | Description    |
+| ----------- | -------------- |
+| CMP         | Compare        |
+| ADD         | Addition       |
+| SUB         | Subtraction    |
+| MUL         | Multiplication |
+| DIV         | Division       |
+
+Future planned operations:
+
+* AND
+* OR
+* XOR
+* NOT
+* SHL
+* SHR
+
+---
+
+# Register File
 
 Each execution thread contains a dedicated register file.
 
 Responsibilities:
 
-* Operand storage
-* Operand reads
-* Result writeback
+* Source operand storage
+* Destination register updates
+* Thread-local architectural state
 
-Register accesses are controlled by scheduler state transitions.
+Special registers:
+
+| Register | Purpose           |
+| -------- | ----------------- |
+| R13      | Block ID          |
+| R14      | Threads Per Block |
+| R15      | Thread ID         |
 
 ---
 
-## Program Counter
+# Program Counter
 
-The Program Counter module manages instruction sequencing.
+The PC module manages instruction sequencing.
 
 Responsibilities:
 
 * Sequential execution
 * Branch handling
-* NZP condition tracking
+* NZP flag tracking
 
-Branch instructions use NZP state generated by compare operations.
+Supported branch conditions:
+
+| Condition | Description |
+| --------- | ----------- |
+| N         | Negative    |
+| Z         | Zero        |
+| P         | Positive    |
 
 ---
 
-## Load Store Unit
+# Load Store Unit
 
-The LSU handles memory operations.
+The LSU manages all memory accesses.
 
 Supported operations:
 
-* LOAD
-* STORE
+| Operation | Description      |
+| --------- | ---------------- |
+| LOAD      | Read from memory |
+| STORE     | Write to memory  |
 
-The LSU communicates with the Data Memory Controller through standardized request/response channels.
-
----
-
-## Current Capabilities
-
-Implemented:
-
-* Arithmetic instructions
-* Compare instructions
-* Conditional branching
-* Loads
-* Stores
-* Program execution
-* Multi-core GPU integration
-* External memory interfaces
-* Cocotb-based verification
+The LSU communicates with the Data Memory Controller through request/response channels.
 
 ---
 
-## Future Work
+# Verification Status
 
-Planned enhancements:
+| Area                 | Status     |
+| -------------------- | ---------- |
+| ALU                  | ✅ Verified |
+| Decoder              | ✅ Verified |
+| Core Execution       | ✅ Verified |
+| Program Execution    | ✅ Verified |
+| GPU Top Integration  | ✅ Verified |
+| Memory Interfaces    | ✅ Verified |
+| Branch Execution     | ✅ Verified |
+| Load/Store Execution | ✅ Verified |
 
-* Logic instructions
-* Shift instructions
-* Label-aware assembler
-* Architectural scoreboarding
-* Improved warp scheduling
+---
+
+# Design Assumptions
+
+> [!IMPORTANT]
+> Tiny GPU currently assumes:
+>
+> * Programs are preloaded into program memory
+> * Data is preloaded into data memory
+> * Device control registers are configured before launch
+> * Memory behaves as an external asynchronous resource
+
+---
+
+# Current Limitations
+
+> [!WARNING]
+> The current implementation is an early architectural prototype.
+
+Not yet implemented:
+
+* Warp switching
+* Occupancy management
 * Cache hierarchy
-* FPGA deployment
+* Architectural scoreboarding
 * SIMD execution
-* Coverage-driven verification
+* Floating-point execution
+* FPGA timing closure
 
 ---
 
-Version: v0.1.0-alpha
+# Future Architecture Roadmap
+
+## v0.2.0
+
+* [ ] Logic instructions
+* [ ] Shift instructions
+* [ ] Assembler labels
+
+## v0.3.0
+
+* [ ] Architectural scoreboarding
+* [ ] Vector workloads
+* [ ] Enhanced verification
+
+## v0.4.0
+
+* [ ] Warp scheduling improvements
+* [ ] Occupancy tracking
+
+## v0.5.0
+
+* [ ] FPGA deployment
+* [ ] Performance characterization
+
+---
+
+<div align="center">
+
+# Version Information
+
+| Item         | Value         |
+| ------------ | ------------- |
+| Project      | Tiny GPU      |
+| Version      | v0.1.0-alpha  |
+| Language     | SystemVerilog |
+| Verification | Cocotb        |
+| Simulator    | Verilator     |
+
+---
+*Last Updated: June 2026*
+
+</div>

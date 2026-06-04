@@ -103,6 +103,58 @@ def assemble_line(line: str) -> int:
             | (rs << 4)
             | rt
         )
+    
+        #
+    # BRN offset
+    #
+
+    if op == "BRN":
+
+        offset = int(tokens[1], 0) & 0xFF
+
+        return (
+            (OPCODES["BRN"] << 12)
+            | offset
+        )
+
+    #
+    # BRZ offset
+    #
+
+    if op == "BRZ":
+
+        offset = int(tokens[1], 0) & 0xFF
+
+        return (
+            (OPCODES["BRZ"] << 12)
+            | offset
+        )
+
+    #
+    # BRP offset
+    #
+
+    if op == "BRP":
+
+        offset = int(tokens[1], 0) & 0xFF
+
+        return (
+            (OPCODES["BRP"] << 12)
+            | offset
+        )
+
+    #
+    # JMP address
+    #
+
+    if op == "JMP":
+
+        address = int(tokens[1], 0) & 0xFF
+
+        return (
+            (OPCODES["JMP"] << 12)
+            | address
+        )
 
     raise ValueError(f"Unsupported instruction: {line}")
 

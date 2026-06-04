@@ -3,6 +3,15 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge
 
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parent.parent
+
+sys.path.insert(0, str(ROOT / "tools"))
+
+from assembler import assemble_file
+
 
 RET = 0xF000
 
@@ -136,7 +145,7 @@ async def run_program(dut, program):
     raise AssertionError("GPU timeout")
 
 @cocotb.test()
-async def test_gpu_const_program(dut):
+async def test_gpu_add_program(dut):
 
     cocotb.start_soon(
         Clock(dut.clk, 10, unit="ns").start()
@@ -149,10 +158,139 @@ async def test_gpu_const_program(dut):
         4
     )
 
-    program = [
-        0x9037,   # CONST R0,55
-        RET,
-    ]
+    program = assemble_file(
+        str(ROOT / "programs" / "add.asm")
+    )
+
+    await run_program(
+        dut,
+        program
+    )
+
+    assert int(dut.done.value) == 1
+
+
+@cocotb.test()
+async def test_gpu_sub_program(dut):
+
+    cocotb.start_soon(
+        Clock(dut.clk, 10, unit="ns").start()
+    )
+
+    await reset_dut(dut)
+
+    await configure_threads(
+        dut,
+        4
+    )
+
+    program = assemble_file(
+        str(ROOT / "programs" / "sub.asm")
+    )
+
+    await run_program(
+        dut,
+        program
+    )
+
+    assert int(dut.done.value) == 1
+
+
+@cocotb.test()
+async def test_gpu_mul_program(dut):
+
+    cocotb.start_soon(
+        Clock(dut.clk, 10, unit="ns").start()
+    )
+
+    await reset_dut(dut)
+
+    await configure_threads(
+        dut,
+        4
+    )
+
+    program = assemble_file(
+        str(ROOT / "programs" / "mul.asm")
+    )
+
+    await run_program(
+        dut,
+        program
+    )
+
+    assert int(dut.done.value) == 1
+
+
+@cocotb.test()
+async def test_gpu_div_program(dut):
+
+    cocotb.start_soon(
+        Clock(dut.clk, 10, unit="ns").start()
+    )
+
+    await reset_dut(dut)
+
+    await configure_threads(
+        dut,
+        4
+    )
+
+    program = assemble_file(
+        str(ROOT / "programs" / "div.asm")
+    )
+
+    await run_program(
+        dut,
+        program
+    )
+
+    assert int(dut.done.value) == 1
+
+
+@cocotb.test()
+async def test_gpu_branch_program(dut):
+
+    cocotb.start_soon(
+        Clock(dut.clk, 10, unit="ns").start()
+    )
+
+    await reset_dut(dut)
+
+    await configure_threads(
+        dut,
+        4
+    )
+
+    program = assemble_file(
+        str(ROOT / "programs" / "branch.asm")
+    )
+
+    await run_program(
+        dut,
+        program
+    )
+
+    assert int(dut.done.value) == 1
+
+
+@cocotb.test()
+async def test_gpu_load_program(dut):
+
+    cocotb.start_soon(
+        Clock(dut.clk, 10, unit="ns").start()
+    )
+
+    await reset_dut(dut)
+
+    await configure_threads(
+        dut,
+        4
+    )
+
+    program = assemble_file(
+        str(ROOT / "programs" / "load.asm")
+    )
 
     await run_program(
         dut,
